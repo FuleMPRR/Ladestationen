@@ -78,7 +78,7 @@
   </footer>
 
   <!-- Leaflet JS -->
-  <script src="https:<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script>
     // ------- Utils -------
@@ -114,7 +114,38 @@
     }
 
     async function loadCSV(){
-      const res = await fetch('Google_Maps_Liste.csv', { cache: 'no-store' });
+      // Versuche mehrere Dateinamen/Orte (Case-Sensitive!)
+      const candidates = [
+        'Google_Maps_Liste.csv',
+        'google_maps_liste.csv',
+        'Google_Maps_Liste.CSV',
+        'data.csv',
+        'MeineKarte/Google_Maps_Liste.csv'
+      ];
+      let lastErr = null;
+      for (const path of candidates){
+        try {
+          const res = await fetch(path, { cache: 'no-store' });
+          if (!res.ok) throw new Error(`${path}: ${res.status}`);
+          const text = await res.text();
+          // Auto-Delimiter; falls nur Semikolon vorhanden, Papa erkennt das i.d.R., ansonsten ersetzen
+          const looksLikeSemicolon = text.indexOf(';') > -1 && text.indexOf(',') === -1;
+          const csvText = looksLikeSemicolon ? text.replaceAll(';', ',') : text;
+          const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true, dynamicTyping: true });
+          const items = [];
+          for (const row of parsed.data){
+            const item = parseRow(row);
+            if (item) items.push(item);
+          }
+          if (items.length) {
+            console.info(`CSV geladen: ${path} — ${items.length} Einträge`);
+            return items;
+          }
+        } catch(e){ lastErr = e; }
+      }
+      if (lastErr) console.error('CSV konnte nicht geladen werden:', lastErr);
+      return [];
+    });
       if (!res.ok) throw new Error('CSV nicht gefunden');
       const text = await res.text();
       const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
@@ -208,6 +239,15 @@
       }
       renderTable(stations);
       renderMarkers(stations);
+      if (!stations.length){
+        // Fallback-View
+        map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
+        const info = document.createElement('div');
+        info.style.color = '#9aa4b2';
+        info.style.margin = '8px 0 12px';
+        info.textContent = 'Keine Daten gefunden. Prüfe Dateiname/Ort: Google_Maps_Liste.csv (Root).';
+        document.querySelector('.container').insertBefore(info, document.getElementById('map'));
+      }
 
       document.getElementById('q').addEventListener('input', filter);
       document.getElementById('reset').addEventListener('click', () => { document.getElementById('q').value=''; filter(); });
@@ -215,6 +255,28 @@
         const header = ['Name','Lat','Lon','Quelle'];
         const lines = stations.map(s => [s.name, s.lat, s.lon, s.source || ''].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
         const csv = [header.join(','), ...lines].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'ladestationen.csv'; a.click(); URL.revokeObjectURL(url);
+      });
+      document.getElementById('locate').addEventListener('click', locateAndFindNearest);
+    });
+      try {
+        stations = await loadCSV();
+      } catch(e){
+        console.error(e);
+        stations = [];
+      }
+      renderTable(stations);
+      renderMarkers(stations);
+
+      document.getElementById('q').addEventListener('input', filter);
+      document.getElementById('reset').addEventListener('click', () => { document.getElementById('q').value=''; filter(); });
+      document.getElementById('exportCsv').addEventListener('click', () => {
+        const header = ['Name','Lat','Lon','Quelle'];
+        const lines = stations.map(s => [s.name, s.lat, s.lon, s.source || ''].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+        const csv = [header.join(','), ...lines].join('
+');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = 'ladestationen.csv'; a.click(); URL.revokeObjectURL(url);

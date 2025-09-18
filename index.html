@@ -1,115 +1,223 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EV‑Ladestationen – Übersicht</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <title>Ladestationen‑Karte</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body { margin:0; font-family:sans-serif; background:#0b0f19; color:#e6e9ee; }
-    header { padding:1rem; border-bottom:1px solid #1f2a44; }
-    .controls { display:flex; gap:.5rem; padding:1rem; }
-    #map { height:500px; margin:1rem; border-radius:12px; border:1px solid #1f2a44; }
-    table { width:calc(100% - 2rem); margin:1rem; border-collapse:collapse; background:#121829; }
-    th,td { padding:.5rem; border:1px solid #1f2a44; }
+    body { margin: 0; font-family: sans-serif; }
+    #map { height: 85vh; width: 100%; }
+    #searchbar { padding: 10px; background: #f0f0f0; border-bottom: 1px solid #ccc; }
+    #searchInput { width: 100%; padding: 10px; font-size: 16px; box-sizing: border-box; }
+    #locateBtn { position: absolute; top: 100px; right: 10px; z-index: 1000; background: white; padding: 10px; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+    #langSelect { position: absolute; top: 10px; right: 10px; z-index: 1000; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>EV‑Ladestationen</h1>
-    <p>GitHub‑Seite mit Karte, Suche und Standort</p>
-  </header>
-  <div class="controls">
-    <input id="q" type="search" placeholder="Suche…" />
-    <button id="exportCsv">CSV exportieren</button>
-    <button id="locate">Mein Standort ▶︎ Nächste</button>
-    <button id="reset">Zurücksetzen</button>
-  </div>
-  <div id="map"></div>
-  <table>
-    <thead><tr><th>Name</th><th>Lat</th><th>Lon</th></tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script>
-    const DEFAULT_VIEW = { center:[46.8182,8.2275], zoom:7 };
-    let stations=[], map, markersLayer, youMarker, nearestLine;
+<!-- Sprachwahl -->
+<div id="langSelect">
+  <button onclick="setLanguage('de')">🇩🇪</button>
+  <button onclick="setLanguage('fr')">🇫🇷</button>
+  <button onclick="setLanguage('it')">🇮🇹</button>
+</div>
 
-    function haversine(lat1, lon1, lat2, lon2){
-      const R=6371000, toRad=d=>d*Math.PI/180;
-      const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
-      const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-      return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-    }
+<!-- Suchleiste -->
+<div id="searchbar">
+  <input type="text" id="searchInput" placeholder="Suche..." />
+</div>
 
-    function parseRow(r){
-      let name=r.Name||"", lat,lon;
-      if(r.Lat&&r.Lon){ lat=parseFloat(r.Lat); lon=parseFloat(r.Lon); }
-      else if(r.Koordinaten){ const p=r.Koordinaten.split(','); lon=parseFloat(p[0]); lat=parseFloat(p[1]); }
-      if(!isFinite(lat)||!isFinite(lon)) return null;
-      return {name,lat,lon};
-    }
+<!-- Karte -->
+<div id="map"></div>
 
-    async function loadCSV(){
-      const res=await fetch('Google_Maps_Liste.csv');
-      const text=await res.text();
-      const parsed=Papa.parse(text,{header:true,skipEmptyLines:true});
-      return parsed.data.map(parseRow).filter(Boolean);
-    }
+<!-- Standort-Button -->
+<div id="locateBtn">📍 Mein Standort</div>
 
-    function initMap(){
-      map=L.map('map');
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
-      markersLayer=L.layerGroup().addTo(map);
-      map.setView(DEFAULT_VIEW.center,DEFAULT_VIEW.zoom);
-    }
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+// ===== Übersetzungen =====
+const translations = {
+  de: {
+    title: "Ladestationen‑Karte",
+    searchPlaceholder: "Suche nach Name...",
+    locateBtn: "📍 Mein Standort",
+    routeLink: "📍 Route mit Google Maps",
+    userLocation: "📍 Dein Standort",
+    description: "Beschreibung"
+  },
+  fr: {
+    title: "Carte des bornes de recharge",
+    searchPlaceholder: "Rechercher par nom...",
+    locateBtn: "📍 Ma position",
+    routeLink: "📍 Itinéraire avec Google Maps",
+    userLocation: "📍 Votre position",
+    description: "Description"
+  },
+  it: {
+    title: "Mappa delle colonnine",
+    searchPlaceholder: "Cerca per nome...",
+    locateBtn: "📍 La mia posizione",
+    routeLink: "📍 Percorso con Google Maps",
+    userLocation: "📍 La tua posizione",
+    description: "Descrizione"
+  }
+};
+let currentLang = 'de';
+function setLanguage(lang) {
+  currentLang = lang;
+  document.getElementById('searchInput').placeholder = translations[lang].searchPlaceholder;
+  document.getElementById('locateBtn').innerText = translations[lang].locateBtn;
+  document.title = translations[lang].title;
+  updatePopups();
+}
 
-    function render(list){
-      document.getElementById('rows').innerHTML=list.map(s=>`<tr><td>${s.name}</td><td>${s.lat.toFixed(5)}</td><td>${s.lon.toFixed(5)}</td></tr>`).join('');
-      markersLayer.clearLayers();
-      list.forEach(s=>L.marker([s.lat,s.lon]).addTo(markersLayer).bindPopup(`<b>${s.name}</b>`));
-      if(list.length) map.fitBounds(list.map(s=>[s.lat,s.lon]));
-    }
+// ===== Karte =====
+let map = L.map('map').setView([46.8, 8.3], 8);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
 
-    function filter(){
-      const t=document.getElementById('q').value.toLowerCase();
-      const f=stations.filter(s=>s.name.toLowerCase().includes(t));
-      render(f);
-    }
+let allMarkers = [];
+let userMarker = null;
+let markerData = [];
+let routeLine = null;
 
-    function locateAndFindNearest(){
-      if(!navigator.geolocation) return alert('Geolocation nicht verfügbar');
-      navigator.geolocation.getCurrentPosition(pos=>{
-        const {latitude,longitude}=pos.coords;
-        if(youMarker) map.removeLayer(youMarker);
-        if(nearestLine) map.removeLayer(nearestLine);
-        youMarker=L.circleMarker([latitude,longitude],{radius:8,color:'red'}).addTo(map).bindPopup('Du bist hier');
-        let best=null,dist=1e9;
-        for(const s of stations){ const d=haversine(latitude,longitude,s.lat,s.lon); if(d<dist){dist=d;best=s;} }
-        if(best){
-          nearestLine=L.polyline([[latitude,longitude],[best.lat,best.lon]],{color:'yellow'}).addTo(map);
-          map.fitBounds([[latitude,longitude],[best.lat,best.lon]]);
-          L.popup().setLatLng([best.lat,best.lon]).setContent(`<b>${best.name}</b><br>${(dist/1000).toFixed(2)} km`).openOn(map);
+// ===== CSV laden (Google_Maps_Liste.csv) =====
+// Erwartete Spalten:
+// 1) Name,Lat,Lon  ODER
+// 2) Name,Beschreibung,Koordinaten   (Koordinaten = "lon,lat,0" aus KML/KMZ)
+async function loadCSV() {
+  // Mehrere Kandidatennamen zur Sicherheit
+  const candidates = ['Google_Maps_Liste.csv','google_maps_liste.csv','data.csv'];
+  for (const path of candidates) {
+    try {
+      const res = await fetch(path, { cache: 'no-store' });
+      if (!res.ok) continue;
+      let text = await res.text();
+      // Deutsche CSVs kommen oft mit Semikolon
+      if (text.indexOf(';') > -1 && text.indexOf(',') === -1) text = text.replaceAll(';', ',');
+      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+      const items = [];
+      for (const row of parsed.data) {
+        const name = (row.Name || row.name || '').toString();
+        let lat, lon, desc = (row.Beschreibung || '').toString();
+        if (row.Lat != null && row.Lon != null) {
+          lat = parseFloat(String(row.Lat).replace(',', '.'));
+          lon = parseFloat(String(row.Lon).replace(',', '.'));
+        } else if (row.Koordinaten != null) {
+          const parts = String(row.Koordinaten).split(',').map(s => s.trim());
+          if (parts.length >= 2) { lon = parseFloat(parts[0].replace(',', '.')); lat = parseFloat(parts[1].replace(',', '.')); }
         }
-      });
-    }
+        if (isFinite(lat) && isFinite(lon)) {
+          items.push({ name, lat, lng: lon, beschreibung: desc });
+        }
+      }
+      if (items.length) return items;
+    } catch(e) { /* Nächsten Kandidaten probieren */ }
+  }
+  return [];
+}
 
-    document.addEventListener('DOMContentLoaded',async()=>{
-      initMap();
-      stations=await loadCSV();
-      render(stations);
-      document.getElementById('q').addEventListener('input',filter);
-      document.getElementById('reset').addEventListener('click',()=>{document.getElementById('q').value='';filter();});
-      document.getElementById('exportCsv').addEventListener('click',()=>{
-        const header=['Name','Lat','Lon'];
-        const csv=[header.join(','),...stations.map(s=>`${s.name},${s.lat},${s.lon}`)].join('\n');
-        const blob=new Blob([csv],{type:'text/csv'});
-        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ladestationen.csv';a.click();
-      });
-      document.getElementById('locate').addEventListener('click',locateAndFindNearest);
+// ===== Marker aufbauen =====
+function buildMarkers(data) {
+  allMarkers.forEach(m => map.removeLayer(m));
+  allMarkers = [];
+  data.forEach(item => {
+    const marker = L.marker([item.lat, item.lng]).addTo(map);
+    marker._data = item;
+    allMarkers.push(marker);
+  });
+  updatePopups();
+  if (allMarkers.length) {
+    const bounds = L.latLngBounds(allMarkers.map(m => m.getLatLng()));
+    map.fitBounds(bounds.pad(0.2));
+  }
+}
+
+function updatePopups() {
+  allMarkers.forEach(marker => {
+    const p = marker._data;
+    const descLabel = translations[currentLang].description;
+    const popupText = `
+      <strong>${p.name || 'Unbenannt'}</strong><br>
+      ${p.beschreibung ? `${descLabel}: ${p.beschreibung}<br>` : ''}
+      <br>
+      <a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank">${translations[currentLang].routeLink}</a>
+    `;
+    marker.bindPopup(popupText);
+  });
+}
+
+function getDistance(lat1, lon1, lat2, lon2) {
+  const toRad = x => x * Math.PI / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Suche
+document.getElementById('searchInput').addEventListener('input', function (e) {
+  const query = e.target.value.toLowerCase();
+  allMarkers.forEach(marker => {
+    const { name, beschreibung } = marker._data;
+    const match = (name||'').toLowerCase().includes(query) || (beschreibung||'').toLowerCase().includes(query);
+    if (match) {
+      if (!map.hasLayer(marker)) map.addLayer(marker);
+    } else {
+      if (map.hasLayer(marker)) map.removeLayer(marker);
+    }
+  });
+});
+
+// Geolocation + nächste Station
+document.getElementById('locateBtn').addEventListener('click', () => {
+  if (!navigator.geolocation) { alert("GPS wird von deinem Gerät nicht unterstützt."); return; }
+  navigator.geolocation.getCurrentPosition(position => {
+    const { latitude, longitude } = position.coords;
+
+    if (userMarker) map.removeLayer(userMarker);
+    if (routeLine) map.removeLayer(routeLine);
+
+    const redIcon = new L.Icon({
+      iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+      shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
+      iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
     });
-  </script>
+
+    userMarker = L.marker([latitude, longitude], { icon: redIcon, title: "User" })
+      .addTo(map)
+      .bindPopup(translations[currentLang].userLocation)
+      .openPopup();
+
+    map.setView([latitude, longitude], 14);
+
+    let nearestMarker = null;
+    let minDistance = Infinity;
+    allMarkers.forEach(marker => {
+      const dist = getDistance(latitude, longitude, marker._latlng.lat, marker._latlng.lng);
+      if (dist < minDistance) { minDistance = dist; nearestMarker = marker; }
+    });
+
+    if (nearestMarker) {
+      nearestMarker.openPopup();
+      map.panTo(nearestMarker.getLatLng());
+      routeLine = L.polyline([[latitude, longitude], [nearestMarker.getLatLng().lat, nearestMarker.getLatLng().lng]], { color: 'blue', weight: 4, dashArray: '5, 10' }).addTo(map);
+    }
+  }, () => { alert("Standort konnte nicht ermittelt werden."); });
+});
+
+// Start
+(async function init(){
+  const data = await loadCSV();
+  markerData = data;
+  buildMarkers(data);
+  setLanguage(currentLang);
+})();
+</script>
 </body>
 </html>

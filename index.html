@@ -2,21 +2,21 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>Ladestationen-Karte</title>
+  <title>Ladestationen‑Karte</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    :root { --bg:#0b0f19; --panel:#121829; --border:#1f2a44; --text:#e6e9ee; --brand:#005AE0; }
-    body { margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
+    body { margin: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0b0f19; color: #f0f0f0; }
     #map { height: 85vh; width: 100%; }
-    #searchbar { padding:12px; background:var(--panel); border-bottom:1px solid var(--border); display:flex; gap:10px; }
-    #searchInput { flex:1; padding:12px; font-size:16px; border-radius:10px; border:1px solid var(--border); background:#0b0f19; color:var(--text); }
-    #locateBtn { position:absolute; top:100px; right:20px; z-index:1000; background:var(--brand); color:#fff; padding:12px 16px; border:none; border-radius:10px; font-weight:600; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.35); }
-    #langSelect { position:absolute; top:20px; right:20px; z-index:1000; display:flex; gap:6px; }
-    #langSelect button { background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:6px 8px; cursor:pointer; }
-    .leaflet-popup-content-wrapper{ background:var(--panel); color:var(--text); border-radius:12px; }
-    .leaflet-popup-tip{ background:var(--panel); }
-    a { color:#88c2ff; text-decoration:none; }
+    #searchbar { padding: 12px; background: #121829; border-bottom: 1px solid #1f2a44; display:flex; }
+    #searchInput { flex:1; padding: 12px; font-size: 16px; border-radius: 10px; border:1px solid #1f2a44; background:#0b0f19; color:#e6e9ee; }
+    #locateBtn { position: absolute; top: 100px; right: 20px; z-index: 1000; background: #005AE0; color:white; padding: 12px 16px; border: none; border-radius: 10px; cursor: pointer; font-weight:600; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: background 0.2s; }
+    #locateBtn:hover { background:#003b95; }
+    #langSelect { position: absolute; top: 20px; right: 20px; z-index: 1000; display:flex; gap:6px; }
+    #langSelect button { background:#121829; border:1px solid #1f2a44; border-radius:8px; padding:6px 8px; cursor:pointer; color:#e6e9ee; }
+    .leaflet-popup-content-wrapper { background:#121829; color:#f0f0f0; border-radius:12px; }
+    .leaflet-popup-tip { background:#121829; }
+    a { color:#4ea3ff; text-decoration:none; }
   </style>
 </head>
 <body>
@@ -28,163 +28,114 @@
 </div>
 
 <div id="searchbar">
-  <input id="searchInput" type="text" placeholder="Suche..." />
+  <input type="text" id="searchInput" placeholder="Suche..." />
 </div>
 
 <div id="map"></div>
-<button id="locateBtn">📍 Mein Standort</button>
+
+<div id="locateBtn">📍 Mein Standort</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
-// ---- Übersetzungen
-const t = {
-  de:{title:"Ladestationen-Karte",ph:"Suche nach Name, Adresse, Ort…",loc:"📍 Mein Standort",route:"📍 Route mit Google Maps",you:"📍 Dein Standort",addr:"Adresse"},
-  fr:{title:"Carte des bornes de recharge",ph:"Rechercher nom, adresse, lieu…",loc:"📍 Ma position",route:"📍 Itinéraire avec Google Maps",you:"📍 Votre position",addr:"Adresse"},
-  it:{title:"Mappa delle colonnine",ph:"Cerca nome, indirizzo, città…",loc:"📍 La mia posizione",route:"📍 Percorso con Google Maps",you:"📍 La tua posizione",addr:"Indirizzo"},
+const translations = {
+  de: { title: "Ladestationen‑Karte", searchPlaceholder: "Suche nach Name oder Ort...", locateBtn: "📍 Mein Standort", routeLink: "📍 Route mit Google Maps", userLocation: "📍 Dein Standort", address: "Adresse" },
+  fr: { title: "Carte des bornes de recharge", searchPlaceholder: "Rechercher par nom ou lieu...", locateBtn: "📍 Ma position", routeLink: "📍 Itinéraire avec Google Maps", userLocation: "📍 Votre position", address: "Adresse" },
+  it: { title: "Mappa delle colonnine", searchPlaceholder: "Cerca per nome o luogo...", locateBtn: "📍 La mia posizione", routeLink: "📍 Percorso con Google Maps", userLocation: "📍 La tua posizione", address: "Indirizzo" }
 };
-let lang='de';
-function setLanguage(l){ lang=l; document.title=t[l].title; document.getElementById('searchInput').placeholder=t[l].ph; document.getElementById('locateBtn').innerText=t[l].loc; updatePopups(); }
+let currentLang = 'de';
+function setLanguage(lang){ currentLang=lang; document.getElementById('searchInput').placeholder=translations[lang].searchPlaceholder; document.getElementById('locateBtn').innerText=translations[lang].locateBtn; document.title=translations[lang].title; updatePopups(); }
 
-// ---- Karte: Esri World Imagery + Labels/Strassen-Overlay
-const map = L.map('map').setView([46.8,8.3], 8);
+let map=L.map('map').setView([46.8,8.3],8);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+  maxZoom:20,
+  attribution:'Tiles © Esri, Sources: Esri, Maxar, Earthstar Geographics, GIS User Community'
+}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{
+  maxZoom:20,
+  attribution:'Labels © Esri',
+  opacity:0.9
+}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',{
+  maxZoom:20,
+  attribution:'Roads © Esri',
+  opacity:0.9
+}).addTo(map);
 
-// Basiskarte (Satellit)
-const esriImagery = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  { maxZoom: 20, attribution: 'Tiles &copy; Esri — Sources: Esri, Maxar, Earthstar Geographics, GIS User Community' }
-).addTo(map);
+let allMarkers=[], userMarker=null, routeLine=null;
 
-// Overlay mit Labels/Strassen
-const esriLabels = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-  { maxZoom: 20, opacity: 0.9, attribution: 'Labels &copy; Esri' }
-).addTo(map);
-const esriTransport = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
-  { maxZoom: 20, opacity: 0.9, attribution: 'Roads &copy; Esri' }
-).addTo(map);
-
-// ---- Daten
-let markers = [];
-let userMarker = null;
-let routeLine = null;
-
-// CSV laden: erwartet Spalten Name, Adresse, "PLz &Ort", "Koordinaten N/E" (lat lon – getrennt durch Leerzeichen/Komma)
-async function loadCSV() {
-  const res = await fetch('Google_Maps_Liste.csv', { cache: 'no-store' });
-  const raw = await res.text();
-  // Semikolon -> Komma, falls nötig
-  const text = (raw.indexOf(';')>-1 && raw.indexOf(',')===-1) ? raw.replaceAll(';', ',') : raw;
-  const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
-  const out = [];
-  for (const row of parsed.data) {
-    const name = (row['Name']||'').toString().trim();
-    const addr = (row['Adresse']||'').toString().trim();
-    const plzOrt = (row['PLz &Ort']||row['PLZ & Ort']||'').toString().trim();
-    const coords = (row['Koordinaten N/E']||'').toString().trim().split(/[ ,]+/); // "47.17 8.51"
-    if (coords.length >= 2) {
-      const lat = parseFloat(coords[0].replace(',', '.'));
-      const lng = parseFloat(coords[1].replace(',', '.'));
-      if (isFinite(lat) && isFinite(lng)) out.push({ name, addr, plzOrt, lat, lng });
-    }
+async function loadCSV(){
+  const res=await fetch('Google_Maps_Liste.csv', { cache: 'no-store' });
+  let text=await res.text();
+  const parsed=Papa.parse(text,{header:true,skipEmptyLines:true,delimiter:';'});
+  const items=[];
+  for(const raw of parsed.data){
+    const row={};
+    Object.keys(raw||{}).forEach(k=>{ if(!k) return; row[k.trim().toLowerCase()]=String(raw[k]??'').trim(); });
+    const name=row['name']||'';
+    const adresse=row['adresse']||'';
+    const plzOrt=row['plz &ort']||row['plz & ort']||row['plz&ort']||'';
+    const coordRaw=row['koordinaten n/e']||row['koordinaten n-e']||row['koordinaten']||'';
+    const parts=coordRaw.split(/[\s,]+/).filter(Boolean);
+    if(parts.length<2) continue;
+    const lat=parseFloat(parts[0].replace(',','.'));
+    const lng=parseFloat(parts[1].replace(',','.'));
+    if(!isFinite(lat)||!isFinite(lng)) continue;
+    items.push({name,adresse,plzOrt,lat,lng});
   }
-  return out;
+  return items;
 }
 
-function buildMarkers(items) {
-  // remove old
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
-  items.forEach(p => {
-    const m = L.marker([p.lat, p.lng]).addTo(map);
-    m._d = p;
-    markers.push(m);
+function buildMarkers(data){
+  allMarkers.forEach(m=>map.removeLayer(m));
+  allMarkers=[];
+  data.forEach(item=>{
+    const marker=L.marker([item.lat,item.lng]).addTo(map);
+    marker._data=item; allMarkers.push(marker);
   });
   updatePopups();
-  if (markers.length) {
-    const b = L.latLngBounds(markers.map(m => m.getLatLng()));
-    map.fitBounds(b.pad(0.2));
+  if(allMarkers.length){
+    const bounds=L.latLngBounds(allMarkers.map(m=>m.getLatLng()));
+    map.fitBounds(bounds.pad(0.2));
   }
 }
 
-function updatePopups() {
-  markers.forEach(m => {
-    const p = m._d;
-    const html = `
-      <strong>${p.name || 'Unbenannt'}</strong><br>
-      ${t[lang].addr}: ${p.addr}${p.plzOrt ? ', ' + p.plzOrt : ''}<br><br>
-      <a target="_blank" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}">${t[lang].route}</a>
-    `;
-    m.bindPopup(html);
+function updatePopups(){
+  allMarkers.forEach(marker=>{
+    const p=marker._data;
+    const popupText=`<strong>${p.name}</strong><br>${translations[currentLang].address}: ${p.adresse}, ${p.plzOrt}<br><br><a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank">${translations[currentLang].routeLink}</a>`;
+    marker.bindPopup(popupText);
   });
 }
 
-function distKm(a,b,c,d){ // haversine (km)
-  const R=6371, toRad=x=>x*Math.PI/180;
-  const dLat=toRad(c-a), dLon=toRad(d-b);
-  const A=Math.sin(dLat/2)**2 + Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(A), Math.sqrt(1-A));
-}
+function getDistance(lat1,lon1,lat2,lon2){ const R=6371; const toRad=x=>x*Math.PI/180; const dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1); const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2; return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
 
-// Suche
-document.getElementById('searchInput').addEventListener('input', e => {
-  const q = e.target.value.toLowerCase();
-  markers.forEach(m => {
-    const {name, addr, plzOrt} = m._d;
-    const match =
-      (name||'').toLowerCase().includes(q) ||
-      (addr||'').toLowerCase().includes(q) ||
-      (plzOrt||'').toLowerCase().includes(q);
-    if (match) { if (!map.hasLayer(m)) map.addLayer(m); }
-    else { if (map.hasLayer(m)) map.removeLayer(m); }
+document.getElementById('searchInput').addEventListener('input',e=>{
+  const query=e.target.value.toLowerCase();
+  allMarkers.forEach(marker=>{
+    const {name,adresse,plzOrt}=marker._data;
+    const match=(name||'').toLowerCase().includes(query)||(adresse||'').toLowerCase().includes(query)||(plzOrt||'').toLowerCase().includes(query);
+    if(match){ if(!map.hasLayer(marker)) map.addLayer(marker); }
+    else{ if(map.hasLayer(marker)) map.removeLayer(marker); }
   });
 });
 
-// Standort + nächste Station
-document.getElementById('locateBtn').addEventListener('click', () => {
-  if (!navigator.geolocation) { alert('GPS wird von deinem Gerät nicht unterstützt.'); return; }
-  navigator.geolocation.getCurrentPosition(pos => {
-    const { latitude, longitude } = pos.coords;
-    if (userMarker) map.removeLayer(userMarker);
-    if (routeLine) map.removeLayer(routeLine);
-
-    const redIcon = new L.Icon({
-      iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
-      shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
-      iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
-    });
-
-    userMarker = L.marker([latitude, longitude], { icon: redIcon })
-      .addTo(map)
-      .bindPopup(t[lang].you)
-      .openPopup();
-
-    map.setView([latitude, longitude], 14);
-
-    // nächste Station
-    let nearest = null, minD = Infinity;
-    markers.forEach(m => {
-      const p = m.getLatLng();
-      const d = distKm(latitude, longitude, p.lat, p.lng);
-      if (d < minD) { minD = d; nearest = m; }
-    });
-
-    if (nearest) {
-      nearest.openPopup();
-      routeLine = L.polyline([[latitude, longitude], [nearest.getLatLng().lat, nearest.getLatLng().lng]],
-        { color:'#88e0ff', weight:4, dashArray:'5,10' }).addTo(map);
-      map.fitBounds([[latitude, longitude], [nearest.getLatLng().lat, nearest.getLatLng().lng]], { padding:[30,30] });
-    }
-  }, () => alert('Standort konnte nicht ermittelt werden.'));
+document.getElementById('locateBtn').addEventListener('click',()=>{
+  if(!navigator.geolocation){ alert("GPS wird von deinem Gerät nicht unterstützt."); return; }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude,longitude}=pos.coords;
+    if(userMarker) map.removeLayer(userMarker);
+    if(routeLine) map.removeLayer(routeLine);
+    const redIcon=new L.Icon({iconUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",shadowUrl:"https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]});
+    userMarker=L.marker([latitude,longitude],{icon:redIcon}).addTo(map).bindPopup(translations[currentLang].userLocation).openPopup();
+    map.setView([latitude,longitude],14);
+    let nearestMarker=null,minDist=Infinity;
+    allMarkers.forEach(marker=>{ const d=getDistance(latitude,longitude,marker._latlng.lat,marker._latlng.lng); if(d<minDist){minDist=d;nearestMarker=marker;} });
+    if(nearestMarker){ nearestMarker.openPopup(); map.panTo(nearestMarker.getLatLng()); routeLine=L.polyline([[latitude,longitude],[nearestMarker.getLatLng().lat,nearestMarker.getLatLng().lng]],{color:'cyan',weight:4,dashArray:'5, 10'}).addTo(map); }
+  },()=>{ alert("Standort konnte nicht ermittelt werden."); });
 });
 
-// Init
-(async function(){
-  const items = await loadCSV();
-  buildMarkers(items);
-  setLanguage(lang);
-})();
+(async function init(){ const data=await loadCSV(); buildMarkers(data); setLanguage(currentLang); })();
 </script>
 </body>
 </html>
